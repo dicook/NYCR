@@ -2,7 +2,7 @@
 title: "[nullabor](http://dicook.github.io/nullabor/)"
 subtitle: "tools for testing whether what you see in plots is really there"
 author: "Di Cook, Monash University"
-date: "NYC R meetup - June 6, 2019 <br> [Slides here](http://dicook.org/NYCR/slides.html)"
+date: "NYC R meetup - June 6, 2019 <br> Slides: [https://dicook.org/files/NYCR/slides.html](https://dicook.org/files/NYCR/slides.html)"
 output:
   xaringan::moon_reader:
     css: ["mystyle.css", shinobi, ninjutsu]
@@ -79,6 +79,7 @@ class: center, middle
 
 - Plots of data allow us to uncover the unexpected, but it needs to be calibrated against what might be seen by chance, if there really is no underlying pattern
 - Classical statistical inference allows computing probabilities, of this being a likely value for the statistic, if there really is no structure
+---
 
 # Post-hoc inference
 
@@ -177,7 +178,7 @@ nyc_cuisine <- nyc_clean %>%
 #ggplot(nyc_cuisine, aes(x=cuisine_description, fill=grade)) + 
 #  geom_bar(position="fill") + xlab("") + ylab("") +
 #  scale_fill_ochre(palette="parliament") 
-ggplot(lineup(null_permute("grade"), nyc_cuisine), 
+ggplot(lineup(null_permute("grade"), nyc_cuisine, pos=6), 
        aes(x=cuisine_description, fill=grade)) + 
   geom_bar(position="fill") + xlab("") + ylab("") +
   scale_fill_ochre(palette="parliament") +
@@ -204,6 +205,8 @@ $H_o:$ There is no difference in proportion A, B, C grade among cuisines
 $H_a:$ There is
 
 Null generating mechanism: Permuting the values of grade
+
+True data plot is in position 6.
 
 ---
 class: center, middle
@@ -270,6 +273,71 @@ $H_a:$ There is
 
 Null generating mechanism: Simulating from an ARIMA model with same parameters
 
+True data plot is in position `r attr(nyc_yrmth_l, "pos")`.
+---
+class: center, middle
+
+
+# Pick the plot that is most different from the others
+
+---
+
+
+```{r eval=FALSE}
+library(sp)
+library(maptools)
+library(rgdal)
+library(ggmap)
+library(tigris)
+library(httr)
+r <- GET('http://data.beta.nyc//dataset/0ff93d2d-90ba-457c-9f7e-39e47bf2ac5f/resource/35dd04fb-81b3-479b-a074-a27a37888ce7/download/d085e2f8d0b54d4590b1e7d1f35594c1pediacitiesnycneighborhoods.geojson')
+nyc_neighborhoods <- readOGR(content(r,'text'), 'OGRGeoJSON', verbose = F)
+nyc_neighborhoods_df <- tidy(nyc_neighborhoods, region="borough") %>%
+  mutate(id=toupper(id))
+save(nyc_neighborhoods_df, file="data/nyc_neighborhoods_df.rda")
+```
+
+```{r out.width="100%", fig.width=12}
+library(broom)
+library(ggthemes)
+load("data/nyc_neighborhoods_df.rda")
+nyc_boro_grade <- nyc_clean %>% 
+  filter(boro != "Missing") %>%
+  mutate(grade_A = ifelse(grade=="A", 1, 0)) %>%
+  select(boro, grade_A)
+nyc_boro_grade_l <- lineup(null_dist("grade_A", "unif", params=list(min=0, max=1)), nyc_boro_grade, n=6)
+nyc_boro_grade_l_p <- nyc_boro_grade_l %>% 
+  group_by(.sample, boro) %>%
+  summarise(prop_A = length(grade_A[grade_A>0.174])/length(grade_A))
+nyc_boro <- left_join(nyc_neighborhoods_df, nyc_boro_grade_l_p, by=c("id"="boro"))
+ggplot() + 
+  geom_polygon(data=nyc_boro, aes(x=long, y=lat, group=group, fill=prop_A)) + 
+  scale_fill_gradient(low="#B68830", high="#232728") +
+  #theme_map() +
+  xlab("") + ylab("") +
+  theme_bw() +
+  theme(legend.position="none", axis.text.x = element_blank(),
+        axis.text.y = element_blank()) +
+  facet_wrap(~.sample, ncol=3)
+```
+
+---
+
+```
+nyc_boro_grade_l <- lineup(null_dist("grade_A", "unif",
+  params=list(min=0, max=1)), nyc_boro_grade, n=6)
+nyc_boro_grade_l_p <- nyc_boro_grade_l %>% 
+  group_by(.sample, boro) %>%
+  summarise(prop_A = length(grade_A[grade_A>0.174])/length(grade_A))
+```
+
+$H_o:$ The percentage of restaurants awarded an A grade in each boro is the same (82.5%)
+
+$H_a:$ Its not
+
+Null generating mechanism: Simulating from an binomial model with same parameters
+
+True data plot is in position `r attr(nyc_boro_grade_l_p, "pos")`
 
 ---
 # Computing p-value
@@ -290,11 +358,15 @@ visual_power(turk_results)
 
 Useful for objectively determining best plot design, see [Hofmann et al (2012)](https://ieeexplore.ieee.org/document/6327249)
 
+
 ---
 # What did we learn about NYC restaurant quality?
 
+?
+
 - There is a difference in percentage A, B, C between cuisines
 - There is no temporal trend
+- Some boroughs are more A class than others
 
 ---
 
